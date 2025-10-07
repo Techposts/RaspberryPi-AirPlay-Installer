@@ -2,9 +2,11 @@
 
 Turn any Raspberry Pi (Zero 2 W, 3, 4, 5) into a modern, high-quality AirPlay 2 receiver in just 5 minutes. This project uses a set of robust scripts to automate the entire installation process, making it incredibly easy to revive your old home theater or favorite speakers.
 
-This project was created to simplify the process originally shown in **[this detailed (but long!) manual tutorial video](https://www.youtube.com/watch?v=WeibcfMywXU)**. Now, you can achieve the same result with just one command!
+The goal of this project was to simplify the manual installation process, making it accessible to everyone.
 
-
+| The Old, Manual Way (40+ Minutes) | The New, Automated Way (5 Minutes!) |
+| :---: | :---: |
+| [![Manual AirPlay 2 Pi Setup](https://img.youtube.com/vi/WeibcfMywXU/0.jpg)](https://www.youtube.com/watch?v=WeibcfMywXU) | **[Link to New Video Coming Soon!]** <br> *(Placeholder for your new, shorter video)* |
 
 ---
 
@@ -39,14 +41,17 @@ curl -sSL https://raw.githubusercontent.com/Techposts/RaspberryPi-AirPlay-Instal
 curl -sSl https://raw.githubusercontent.com/Techposts/RaspberryPi-AirPlay-Installer/main/RaspberryPi-AirPlay-Installer-Scripts/install_airplay_v3.sh | bash
 ```
 
-The script is interactive and will guide you through the following steps:
-1.  **System Check:** Verifies your Pi is ready.
-2.  **Audio Device Selection:** Lets you choose your connected sound card.
-3.  **Naming Your Device:** Asks you to name your new AirPlay speaker.
-4.  **Wi-Fi Optimization:** Asks for permission to disable power saving.
-5.  **Final Confirmation:** Summarizes your choices before starting.
+The script is interactive and will guide you through the process. Once finished, it will reboot, and your AirPlay 2 receiver will be ready to use!
 
-Once finished, it will reboot, and your AirPlay 2 receiver will be ready to use!
+---
+
+### ✅ The Final Result
+
+When you're done, your setup will be seamless. Your Raspberry Pi will appear as a native AirPlay device on your network, ready to stream from any Apple device.
+
+| Mobile Screenshot | Hardware Setup |
+| :---: | :---: |
+| **** <br> *Your new device, ready to connect.* | **** <br> *The simple and clean hardware setup.* |
 
 ---
 
@@ -62,3 +67,5 @@ This project uses a two-script system for a safe and reliable installation:
 ### License
 
 This project is licensed under the MIT License. See the `LICENSE` file for details.
+
+
