@@ -19,7 +19,7 @@ This project was created to simplify the process originally shown in **[this det
 
 ---
 
-### 硬件要求
+### Hardware Requirements
 
 * **Raspberry Pi:** A Pi Zero 2 W, 3, 4, or 5 is recommended.
 * **MicroSD Card:** A quality card with at least 8GB.
