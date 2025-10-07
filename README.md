@@ -36,7 +36,7 @@ After installing Raspberry Pi OS Lite and connecting to your Pi via SSH, run thi
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/Techposts/RaspberryPi-AirPlay-Installer/main/RaspberryPi-AirPlay-Installer-Scripts/pre_check_airplay_on_pi.sh | bash
-curl -sSl https://raw.githubusercontent.com/Techposts/RaspberryPi-AirPlay-Installer/main/RaspberryPi-AirPlay-Installer-Scripts/pre_check_airplay_on_pi.sh | bash
+curl -sSl https://raw.githubusercontent.com/Techposts/RaspberryPi-AirPlay-Installer/main/RaspberryPi-AirPlay-Installer-Scripts/install_airplay_v3.sh | bash
 ```
 
 The script is interactive and will guide you through the following steps:
