@@ -2,7 +2,7 @@
 
 Turn any Raspberry Pi (Zero 2 W, 3, 4, 5) into a modern, high-quality AirPlay 2 receiver in just 5 minutes. This project uses a set of robust scripts to automate the entire installation process, making it incredibly easy to revive your old home theater or favorite speakers.
 
-> **If you find this project helpful, please consider giving it a ⭐ star on GitHub!** It helps others discover it and shows your appreciation for the work.
+> **If you find this project helpful, please consider giving it a ⭐ star on GitHub!** It helps others discover it and shows your appreciation for the work. Also, please like the video and **[subscribe to the channel](https://www.youtube.com/@ravis1ngh)**. It helps us create more content like this.
 
 The goal of this project was to simplify the manual installation process, making it accessible to everyone.
 
