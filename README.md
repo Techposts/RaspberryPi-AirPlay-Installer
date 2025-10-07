@@ -71,7 +71,7 @@ This project uses a two-script system for a safe and reliable installation:
 If this installer helped you bring your old speakers back to life, please consider showing your support!
 
 * **⭐ Star the Repository:** Starring this project on GitHub is a great way to show your appreciation and helps others find it.
-* **👍 Like & Subscribe:** If you came from the video tutorial, please **like the video** and **[subscribe to the channel](https://www.youtube.com/@Techposts)**. It helps us create more content like this.
+* **👍 Like & Subscribe:** If you came from the video tutorial, please **like the video** and **[subscribe to the channel](https://www.youtube.com/@ravis1ngh)**. It helps us create more content like this.
 
 ---
 
