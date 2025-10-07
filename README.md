@@ -1,4 +1,4 @@
-# RaspberryPi-AirPlay-Installer
+# RaspberryPi-AirPlay-Installer 📻
 
 Turn any Raspberry Pi (Zero 2 W, 3, 4, 5) into a modern, high-quality AirPlay 2 receiver in just 5 minutes. This project uses a set of robust scripts to automate the entire installation process, making it incredibly easy to revive your old home theater or favorite speakers.
 
@@ -14,7 +14,7 @@ This project was created to simplify the process originally shown in **[this det
 * **🤖 Fully Automated:** The script handles system updates, dependency installation, compiling, and configuration.
 * **✅ Smart Pre-Checks:** A pre-installation script verifies your system is ready, checking for internet, disk space, and audio devices to prevent errors.
 * **🔌 USB DAC Auto-Detection:** Intelligently finds your external USB sound card and lets you choose the correct one if you have multiple.
-* **⚙️ Optimized for Performance:** Automatically configures settings for the best audio quality and disables Wi-Fi power saving to prevent dropouts.
+* **⚙️ Optimized for Performance:** Automatically configures settings for the best audio quality and prompts to disable Wi-Fi power saving to prevent dropouts.
 * **🛠️ Robust & Reliable:** Includes error handling and detailed logging for easy troubleshooting.
 
 ---
@@ -30,12 +30,12 @@ This project was created to simplify the process originally shown in **[this det
 
 ---
 
-###  Quick Start Installation
+###  🚀 Quick Start Installation
 
 After installing Raspberry Pi OS Lite and connecting to your Pi via SSH, run this single command. It will download the pre-check script and, if successful, automatically launch the main installer.
 
 ```bash
-curl -sSL [https://raw.githubusercontent.com/Techposts/AmbiSense/main/Assets/pre_check_airplay_on_pi.sh](https://raw.githubusercontent.com/Techposts/AmbiSense/main/Assets/pre_check_airplay_on_pi.sh) | bash
+curl -sSL [https://raw.githubusercontent.com/Techposts/RaspberryPi-AirPlay-Installer/main/RaspberryPi-AirPlay-Installer-Scripts/pre_check_airplay_on_pi.sh](https://raw.githubusercontent.com/Techposts/RaspberryPi-AirPlay-Installer/main/RaspberryPi-AirPlay-Installer-Scripts/pre_check_airplay_on_pi.sh) | bash
 ```
 
 The script is interactive and will guide you through the following steps:
