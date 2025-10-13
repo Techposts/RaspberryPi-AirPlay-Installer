@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ==============================================================================
-# WordPress + Cloudflare Tunnel - Complete Installer v5.0
+# WordPress + Cloudflare Tunnel - Complete Fixed Installer
 # ==============================================================================
 # Version: 3.0 - Thoroughly tested and reviewed
 # ==============================================================================
@@ -473,6 +473,54 @@ fi
 TUNNEL_NAME="wordpress-tunnel"
 
 # Check if tunnel already exists
+echo
+print_info "Checking for existing tunnels..."
+cloudflared tunnel list
+
+echo
+read -p "Do you want to use an existing tunnel? (y/n): " USE_EXISTING
+
+if [[ "$USE_EXISTING" == "y" || "$USE_EXISTING" == "Y" ]]; then
+    echo
+    print_info "Available tunnels listed above"
+    read -p "Enter the tunnel ID or name to use: " EXISTING_TUNNEL_INPUT
+    
+    # Try to get tunnel ID
+    if [[ "$EXISTING_TUNNEL_INPUT" =~ ^[a-f0-9-]{36}$ ]]; then
+        # It's already a UUID
+        TUNNEL_ID="$EXISTING_TUNNEL_INPUT"
+    else
+        # It's a name, get the ID
+        TUNNEL_ID=$(cloudflared tunnel list 2>/dev/null | grep "$EXISTING_TUNNEL_INPUT" | awk '{print $1}' | head -1)
+    fi
+    
+    if [[ -z "$TUNNEL_ID" ]]; then
+        error_exit "Could not find tunnel: $EXISTING_TUNNEL_INPUT"
+    fi
+    
+    TUNNEL_NAME=$(cloudflared tunnel list 2>/dev/null | grep "$TUNNEL_ID" | awk '{print $2}')
+    print_success "Using existing tunnel: $TUNNEL_NAME ($TUNNEL_ID)"
+else
+    # Create new tunnel
+    EXISTING_TUNNEL=$(cloudflared tunnel list 2>/dev/null | grep "$TUNNEL_NAME" | awk '{print $1}' || true)
+
+    if [[ -n "$EXISTING_TUNNEL" ]]; then
+        print_info "Tunnel '$TUNNEL_NAME' already exists"
+        TUNNEL_ID="$EXISTING_TUNNEL"
+        print_success "Using existing tunnel: $TUNNEL_ID"
+    else
+        print_info "Creating new tunnel: $TUNNEL_NAME..."
+        cloudflared tunnel create $TUNNEL_NAME
+
+        TUNNEL_ID=$(cloudflared tunnel list | grep "$TUNNEL_NAME" | awk '{print $1}')
+
+        if [[ -z "$TUNNEL_ID" ]]; then
+            error_exit "Failed to create tunnel"
+        fi
+
+        print_success "Tunnel created: $TUNNEL_ID"
+    fi
+fi
 EXISTING_TUNNEL=$(cloudflared tunnel list 2>/dev/null | grep "$TUNNEL_NAME" | awk '{print $1}' || true)
 
 if [[ -n "$EXISTING_TUNNEL" ]]; then
@@ -534,16 +582,36 @@ fi
 print_info "Starting tunnel..."
 systemctl start cloudflared
 systemctl enable cloudflared
-sleep 3
+sleep 5
 
 if systemctl is-active --quiet cloudflared; then
     print_success "Tunnel service running"
+    
+    # Show connection status
+    echo
+    print_info "Checking tunnel connection..."
+    sleep 2
+    if journalctl -u cloudflared -n 50 --no-pager 2>/dev/null | grep -q "Registered tunnel connection"; then
+        print_success "Tunnel successfully connected to Cloudflare"
+    else
+        print_warning "Tunnel started but connection not confirmed yet"
+        print_info "Check logs: sudo journalctl -u cloudflared -f"
+    fi
 else
     print_error "Tunnel failed to start"
     print_info "Checking logs..."
-    journalctl -u cloudflared -n 20 --no-pager
+    journalctl -u cloudflared -n 30 --no-pager
     error_exit "Tunnel service failed"
 fi
+
+# Verify DNS records
+echo
+print_info "Verifying DNS records in Cloudflare..."
+echo -e "${C_CYAN}Expected DNS records:${C_RESET}"
+echo "  CNAME    $DOMAIN              → ${TUNNEL_ID}.cfargotunnel.com"
+echo "  CNAME    www.$DOMAIN          → ${TUNNEL_ID}.cfargotunnel.com"
+echo
+print_info "You can verify at: https://dash.cloudflare.com (DNS section)"
 
 # ==============================================================================
 # STEP 12: Create Summary
