@@ -570,18 +570,110 @@ print_success "DNS configured"
 # ==============================================================================
 print_header "STEP 11: Starting Tunnel Service"
 
-# Check if service already installed
-if systemctl list-unit-files | grep -q "cloudflared.service"; then
-    print_info "Tunnel service already installed"
-    systemctl stop cloudflared 2>/dev/null || true
+# Check for existing config conflicts
+EXISTING_SYSTEM_CONFIG="/etc/cloudflared/config.yml"
+NEW_CONFIG="$HOME/.cloudflared/config.yml"
+
+if [[ -f "$EXISTING_SYSTEM_CONFIG" ]]; then
+    print_warning "Existing tunnel configuration found at $EXISTING_SYSTEM_CONFIG"
+    echo
+    echo "You have options:"
+    echo "  1) Add this domain to existing tunnel config (recommended)"
+    echo "  2) Replace existing config with new one"
+    echo "  3) Keep both (requires manual service config)"
+    echo
+    read -p "Choose option (1/2/3): " CONFIG_CHOICE
+    
+    case $CONFIG_CHOICE in
+        1)
+            print_info "Adding domains to existing tunnel configuration..."
+            
+            # Backup existing config
+            cp "$EXISTING_SYSTEM_CONFIG" "${BACKUP_DIR}/config.yml.backup.$(date +%s)"
+            
+            # Check if our domains already exist in config
+            if grep -q "$DOMAIN" "$EXISTING_SYSTEM_CONFIG"; then
+                print_warning "Domain $DOMAIN already in configuration"
+            else
+                # Add new ingress rules before the catch-all rule
+                print_info "Adding $DOMAIN to tunnel configuration..."
+                
+                # Create temp file with new rules
+                awk -v domain="$DOMAIN" -v wwwdomain="www.$DOMAIN" '
+                /- service: http_status:404/ {
+                    print "  - hostname: " domain
+                    print "    service: http://localhost:80"
+                    print "  - hostname: " wwwdomain
+                    print "    service: http://localhost:80"
+                }
+                {print}
+                ' "$EXISTING_SYSTEM_CONFIG" > /tmp/config.yml.new
+                
+                mv /tmp/config.yml.new "$EXISTING_SYSTEM_CONFIG"
+                print_success "Domains added to existing configuration"
+            fi
+            
+            # Show updated config
+            echo
+            echo -e "${C_CYAN}Updated configuration:${C_RESET}"
+            echo -e "${C_YELLOW}─────────────────────────────────────────────────────${C_RESET}"
+            cat "$EXISTING_SYSTEM_CONFIG" | sed 's/^/  /'
+            echo -e "${C_YELLOW}─────────────────────────────────────────────────────${C_RESET}"
+            
+            # Restart existing service
+            print_info "Restarting cloudflared service..."
+            systemctl restart cloudflared
+            ;;
+            
+        2)
+            print_info "Replacing existing configuration..."
+            
+            # Backup old config
+            cp "$EXISTING_SYSTEM_CONFIG" "${BACKUP_DIR}/config.yml.backup.$(date +%s)"
+            
+            # Copy new config to system location
+            cp "$NEW_CONFIG" "$EXISTING_SYSTEM_CONFIG"
+            print_success "Configuration replaced"
+            
+            # Restart service
+            print_info "Restarting cloudflared service..."
+            systemctl restart cloudflared
+            ;;
+            
+        3)
+            print_error "Manual configuration required"
+            print_info "Your new config is at: $NEW_CONFIG"
+            print_info "Run: sudo cloudflared --config $NEW_CONFIG service install"
+            exit 0
+            ;;
+            
+        *)
+            error_exit "Invalid choice"
+            ;;
+    esac
 else
+    # No existing config, standard installation
+    # Move config to system location
     print_info "Installing tunnel service..."
+    
+    mkdir -p /etc/cloudflared
+    cp "$NEW_CONFIG" "$EXISTING_SYSTEM_CONFIG"
+    
+    # Also copy credentials to system location if needed
+    if [[ ! -f "/etc/cloudflared/${TUNNEL_ID}.json" ]]; then
+        cp "$HOME/.cloudflared/${TUNNEL_ID}.json" "/etc/cloudflared/${TUNNEL_ID}.json"
+        # Update config to point to new location
+        sed -i "s|$HOME/.cloudflared/${TUNNEL_ID}.json|/etc/cloudflared/${TUNNEL_ID}.json|" "$EXISTING_SYSTEM_CONFIG"
+    fi
+    
+    # Install service
     cloudflared service install
+    
+    # Start service
+    systemctl start cloudflared
+    systemctl enable cloudflared
 fi
 
-print_info "Starting tunnel..."
-systemctl start cloudflared
-systemctl enable cloudflared
 sleep 5
 
 if systemctl is-active --quiet cloudflared; then
