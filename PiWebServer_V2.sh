@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ==============================================================================
-# WordPress + Cloudflare Tunnel - Complete Fixed Installer
+# WordPress + Cloudflare Tunnel - Complete Installer v5.0
 # ==============================================================================
 # Version: 3.0 - Thoroughly tested and reviewed
 # ==============================================================================
