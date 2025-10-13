@@ -322,18 +322,81 @@ print_success "Apache configured"
 # ==============================================================================
 print_header "STEP 9: Installing Cloudflare Tunnel"
 
-print_info "Adding Cloudflare repository..."
-mkdir -p /usr/share/keyrings
-curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | tee /usr/share/keyrings/cloudflare-main.gpg >/dev/null
+# Detect architecture
+ARCH=$(uname -m)
+case $ARCH in
+    x86_64)
+        CLOUDFLARED_ARCH="amd64"
+        ;;
+    aarch64|arm64)
+        CLOUDFLARED_ARCH="arm64"
+        ;;
+    armv7l|armhf)
+        CLOUDFLARED_ARCH="arm"
+        ;;
+    *)
+        error_exit "Unsupported architecture: $ARCH"
+        ;;
+esac
 
-echo "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared $(lsb_release -cs) main" | \
-    tee /etc/apt/sources.list.d/cloudflared.list >/dev/null
+print_info "Detected architecture: $ARCH ($CLOUDFLARED_ARCH)"
 
-print_info "Installing cloudflared..."
-apt-get update -qq
-DEBIAN_FRONTEND=noninteractive apt-get install -y cloudflared || error_exit "Failed to install cloudflared"
+# Try repository method first
+print_info "Attempting repository installation..."
+if [[ -f /etc/os-release ]]; then
+    . /etc/os-release
+    # Try to use a compatible version
+    DISTRO_CODENAME="${VERSION_CODENAME:-bookworm}"
+    
+    # Fallback to bookworm for unsupported versions
+    case $DISTRO_CODENAME in
+        trixie|sid|unstable)
+            print_warning "Using bookworm repository for $DISTRO_CODENAME"
+            DISTRO_CODENAME="bookworm"
+            ;;
+    esac
+    
+    mkdir -p /usr/share/keyrings
+    if curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg 2>/dev/null | tee /usr/share/keyrings/cloudflare-main.gpg >/dev/null; then
+        echo "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared $DISTRO_CODENAME main" | \
+            tee /etc/apt/sources.list.d/cloudflared.list >/dev/null
+        
+        apt-get update -qq 2>/dev/null
+        if DEBIAN_FRONTEND=noninteractive apt-get install -y cloudflared 2>/dev/null; then
+            print_success "Cloudflared installed via repository"
+        else
+            print_warning "Repository installation failed, trying direct download..."
+            REPO_INSTALL_FAILED=true
+        fi
+    else
+        REPO_INSTALL_FAILED=true
+    fi
+fi
 
-print_success "Cloudflared installed"
+# If repository install failed, download directly
+if [[ "${REPO_INSTALL_FAILED:-false}" == "true" ]] || ! command -v cloudflared &> /dev/null; then
+    print_info "Installing cloudflared directly from GitHub..."
+    
+    cd /tmp
+    CLOUDFLARED_URL="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${CLOUDFLARED_ARCH}"
+    
+    print_info "Downloading cloudflared..."
+    if wget -q --show-progress "$CLOUDFLARED_URL" -O cloudflared 2>/dev/null || curl -L "$CLOUDFLARED_URL" -o cloudflared 2>/dev/null; then
+        chmod +x cloudflared
+        mv cloudflared /usr/local/bin/
+        print_success "Cloudflared installed from GitHub"
+    else
+        error_exit "Failed to download cloudflared"
+    fi
+fi
+
+# Verify installation
+if command -v cloudflared &> /dev/null; then
+    CLOUDFLARED_VERSION=$(cloudflared --version 2>/dev/null || echo "unknown")
+    print_success "Cloudflared ready: $CLOUDFLARED_VERSION"
+else
+    error_exit "Cloudflared installation verification failed"
+fi
 
 # ==============================================================================
 # STEP 10: Setup Cloudflare Tunnel (Interactive)
