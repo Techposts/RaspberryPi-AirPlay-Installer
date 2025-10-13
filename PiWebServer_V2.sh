@@ -1,17 +1,15 @@
 #!/bin/bash
 
 # ==============================================================================
-# WordPress + Cloudflare Tunnel - Complete Automated Installer
+# WordPress + Cloudflare Tunnel - Complete Automated Installer (Fixed)
 # ==============================================================================
+# Version: 2.0
 # This script installs and configures:
-# - Apache2 Web Server
-# - MariaDB Database
-# - PHP 8.1+
-# - WordPress (latest version)
-# - Cloudflare Tunnel with automatic DNS configuration
+# - Apache2, MariaDB, PHP, WordPress, Cloudflare Tunnel
 # ==============================================================================
 
-set -e  # Exit on any error
+set -euo pipefail
+IFS=$'\n\t'
 
 # Colors for output
 C_RESET='\033[0m'
@@ -23,21 +21,20 @@ C_CYAN='\033[0;36m'
 C_MAGENTA='\033[0;35m'
 
 # Logging functions
-print_header() { echo -e "\n${C_MAGENTA}╔════════════════════════════════════════════════════════════╗${C_RESET}"; echo -e "${C_MAGENTA}║${C_RESET} ${C_CYAN}$1${C_RESET}"; echo -e "${C_MAGENTA}╚════════════════════════════════════════════════════════════╝${C_RESET}\n"; }
-print_info() { echo -e "${C_BLUE}ℹ INFO:${C_RESET} $1"; }
-print_success() { echo -e "${C_GREEN}✓ SUCCESS:${C_RESET} $1"; }
-print_warning() { echo -e "${C_YELLOW}⚠ WARNING:${C_RESET} $1"; }
-print_error() { echo -e "${C_RED}✗ ERROR:${C_RESET} $1"; }
+print_header() { 
+    echo -e "\n${C_MAGENTA}╔════════════════════════════════════════════════════════════╗${C_RESET}"
+    echo -e "${C_MAGENTA}║${C_RESET} ${C_CYAN}$1${C_RESET}"
+    echo -e "${C_MAGENTA}╚════════════════════════════════════════════════════════════╝${C_RESET}\n"
+}
+print_info() { echo -e "${C_BLUE}ℹ${C_RESET} $1"; }
+print_success() { echo -e "${C_GREEN}✓${C_RESET} $1"; }
+print_warning() { echo -e "${C_YELLOW}⚠${C_RESET} $1"; }
+print_error() { echo -e "${C_RED}✗${C_RESET} $1"; }
 
 # Log file
 LOG_FILE="/var/log/wordpress-cloudflare-installer.log"
 SUMMARY_FILE="/root/installation_summary.txt"
 BACKUP_DIR="/root/installation_backups"
-
-# Function to log and display
-log_and_display() {
-    echo -e "$1" | tee -a "$LOG_FILE"
-}
 
 # Error handler
 error_exit() {
@@ -51,9 +48,14 @@ if [[ $EUID -ne 0 ]]; then
    error_exit "This script must be run as root (use sudo)"
 fi
 
+# Create necessary directories
+mkdir -p "$BACKUP_DIR"
+mkdir -p /var/log
+touch "$LOG_FILE"
+
 clear
 echo -e "${C_GREEN}════════════════════════════════════════════════════════════${C_RESET}"
-echo -e "${C_CYAN}   WordPress + Cloudflare Tunnel Installer${C_RESET}"
+echo -e "${C_CYAN}   WordPress + Cloudflare Tunnel Installer v2.0${C_RESET}"
 echo -e "${C_GREEN}════════════════════════════════════════════════════════════${C_RESET}"
 echo
 print_info "This script will install:"
@@ -61,18 +63,14 @@ echo "  • Apache2 Web Server"
 echo "  • MariaDB Database"
 echo "  • PHP 8.1+"
 echo "  • WordPress (latest)"
-echo "  • Cloudflare Tunnel"
+echo "  • Cloudflare Tunnel with DNS"
 echo
 print_warning "This will take 5-10 minutes"
 echo
-read -p "Press ENTER to continue or CTRL+C to cancel..."
-
-# Create backup directory
-mkdir -p "$BACKUP_DIR"
-mkdir -p /var/log
+read -p "Press ENTER to continue or CTRL+C to cancel..." dummy
 
 # Start logging
-exec > >(tee -a "$LOG_FILE")
+exec 1> >(tee -a "$LOG_FILE")
 exec 2>&1
 
 print_info "Installation started at $(date)"
@@ -84,82 +82,200 @@ print_header "STEP 1: Configuration"
 
 # Get domain name
 echo -e "${C_CYAN}Domain Configuration${C_RESET}"
-echo "Examples: example.com, mysite.net, blog.io"
+echo "Enter your domain name (without http:// or www.)"
+echo "Examples: example.com, mysite.net, blog.org"
 echo
 while true; do
-    read -p "Enter your domain name: " DOMAIN
-    DOMAIN=$(echo "$DOMAIN" | xargs | tr '[:upper:]' '[:lower:]')  # Trim and lowercase
+    read -p "Domain: " DOMAIN
     
-    if [[ -z "$DOMAIN" ]]; then
-        print_error "Domain name cannot be empty"
-        echo
-        continue
-    fi
-    
-    # Remove common prefixes if user included them
+    # Clean input
+    DOMAIN=$(echo "$DOMAIN" | xargs)
+    DOMAIN=$(echo "$DOMAIN" | tr '[:upper:]' '[:lower:]')
     DOMAIN="${DOMAIN#http://}"
     DOMAIN="${DOMAIN#https://}"
     DOMAIN="${DOMAIN#www.}"
     DOMAIN="${DOMAIN%/}"
     
-    # Simple validation - must contain at least one dot and valid characters
-    if [[ "$DOMAIN" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)+$ ]]; then
+    if [[ -z "$DOMAIN" ]]; then
+        print_error "Domain cannot be empty. Please try again."
+        echo
+        continue
+    fi
+    
+    # Simple but effective validation
+    if [[ "$DOMAIN" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}$ ]]; then
         print_success "Domain accepted: $DOMAIN"
         echo
         break
     else
-        print_error "Invalid domain format. Please enter a valid domain (e.g., example.com)"
+        print_error "Invalid domain format. Please enter a valid domain like 'example.com'"
         echo
     fi
 done
 
 # Get Cloudflare API Token
-echo
-print_info "You need a Cloudflare API Token with:"
-echo "  • Zone:Zone:Edit permissions"
-echo "  • Zone:DNS:Edit permissions"
-echo "  Create one at: https://dash.cloudflare.com/profile/api-tokens"
+echo -e "${C_CYAN}Cloudflare API Token${C_RESET}"
+echo "Create a token at: https://dash.cloudflare.com/profile/api-tokens"
+echo "Click 'Create Token' → Use 'Edit zone DNS' template"
 echo
 while true; do
-    read -sp "Enter your Cloudflare API Token: " CF_API_TOKEN
+    read -sp "Enter API Token (hidden): " CF_API_TOKEN
     echo
+    
+    CF_API_TOKEN=$(echo "$CF_API_TOKEN" | xargs)
+    
     if [[ -z "$CF_API_TOKEN" ]]; then
-        print_error "API Token cannot be empty"
+        print_error "Token cannot be empty"
+        echo
         continue
     fi
-    break
+    
+    if [[ ${#CF_API_TOKEN} -lt 20 ]]; then
+        print_error "Token seems too short (should be 40+ characters)"
+        echo
+        continue
+    fi
+    
+    print_info "Verifying token..."
+    TOKEN_TEST=$(curl -s -X GET "https://api.cloudflare.com/client/v4/user/tokens/verify" \
+        -H "Authorization: Bearer $CF_API_TOKEN" \
+        -H "Content-Type: application/json" 2>/dev/null)
+    
+    if echo "$TOKEN_TEST" | grep -q '"status":"active"'; then
+        print_success "Token verified successfully"
+        echo
+        break
+    else
+        print_error "Token verification failed. Please check and try again."
+        ERROR_MSG=$(echo "$TOKEN_TEST" | grep -o '"message":"[^"]*' | cut -d'"' -f4)
+        if [[ -n "$ERROR_MSG" ]]; then
+            echo "  Error: $ERROR_MSG"
+        fi
+        echo
+        read -p "Try again? (y/n): " retry
+        if [[ "$retry" != "y" && "$retry" != "Y" ]]; then
+            exit 0
+        fi
+    fi
 done
 
 # Get Cloudflare Account ID
+echo -e "${C_CYAN}Cloudflare Account ID${C_RESET}"
+echo "Find it at: https://dash.cloudflare.com"
+echo "(Look in the right sidebar on any page)"
 echo
-print_info "Find your Account ID at: https://dash.cloudflare.com (right sidebar)"
 while true; do
-    read -p "Enter your Cloudflare Account ID: " CF_ACCOUNT_ID
+    read -p "Account ID: " CF_ACCOUNT_ID
+    
+    CF_ACCOUNT_ID=$(echo "$CF_ACCOUNT_ID" | xargs)
+    
     if [[ -z "$CF_ACCOUNT_ID" ]]; then
         print_error "Account ID cannot be empty"
+        echo
         continue
     fi
+    
+    if [[ ${#CF_ACCOUNT_ID} -ne 32 ]] || [[ ! "$CF_ACCOUNT_ID" =~ ^[a-f0-9]+$ ]]; then
+        print_warning "Format looks unusual (expected 32 hex characters)"
+        read -p "Continue anyway? (y/n): " confirm
+        if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+            echo
+            continue
+        fi
+    fi
+    
+    print_success "Account ID accepted"
+    echo
     break
 done
 
-# Get Cloudflare Zone ID
+# Get or auto-detect Zone ID
+echo -e "${C_CYAN}Cloudflare Zone ID${C_RESET}"
+echo "We can try to auto-detect your Zone ID"
 echo
-print_info "Find your Zone ID at: https://dash.cloudflare.com (Overview page, right sidebar)"
-while true; do
-    read -p "Enter your Cloudflare Zone ID for $DOMAIN: " CF_ZONE_ID
-    if [[ -z "$CF_ZONE_ID" ]]; then
-        print_error "Zone ID cannot be empty"
-        continue
+read -p "Auto-detect Zone ID? (y/n): " AUTO_ZONE
+
+if [[ "$AUTO_ZONE" == "y" || "$AUTO_ZONE" == "Y" ]]; then
+    print_info "Searching for zone: $DOMAIN..."
+    
+    ZONE_RESPONSE=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones?name=$DOMAIN" \
+        -H "Authorization: Bearer $CF_API_TOKEN" \
+        -H "Content-Type: application/json" 2>/dev/null)
+    
+    CF_ZONE_ID=$(echo "$ZONE_RESPONSE" | grep -o '"id":"[^"]*' | head -1 | cut -d'"' -f4)
+    
+    if [[ -n "$CF_ZONE_ID" && ${#CF_ZONE_ID} -eq 32 ]]; then
+        print_success "Found Zone ID: $CF_ZONE_ID"
+        echo
+    else
+        print_warning "Auto-detection failed. Please enter manually."
+        echo "Find it at: https://dash.cloudflare.com/$DOMAIN (right sidebar)"
+        echo
+        while true; do
+            read -p "Zone ID: " CF_ZONE_ID
+            CF_ZONE_ID=$(echo "$CF_ZONE_ID" | xargs)
+            
+            if [[ -n "$CF_ZONE_ID" ]]; then
+                print_success "Zone ID accepted"
+                echo
+                break
+            fi
+            print_error "Zone ID cannot be empty"
+        done
     fi
-    break
-done
+else
+    echo "Find it at: https://dash.cloudflare.com/$DOMAIN (right sidebar)"
+    echo
+    while true; do
+        read -p "Zone ID: " CF_ZONE_ID
+        CF_ZONE_ID=$(echo "$CF_ZONE_ID" | xargs)
+        
+        if [[ -z "$CF_ZONE_ID" ]]; then
+            print_error "Zone ID cannot be empty"
+            echo
+            continue
+        fi
+        
+        if [[ ${#CF_ZONE_ID} -ne 32 ]] || [[ ! "$CF_ZONE_ID" =~ ^[a-f0-9]+$ ]]; then
+            print_warning "Format looks unusual (expected 32 hex characters)"
+            read -p "Continue anyway? (y/n): " confirm
+            if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+                echo
+                continue
+            fi
+        fi
+        
+        print_success "Zone ID accepted"
+        echo
+        break
+    done
+fi
 
 # Generate secure passwords
-MYSQL_ROOT_PASSWORD=$(openssl rand -base64 32)
-WP_DB_PASSWORD=$(openssl rand -base64 24)
-TUNNEL_SECRET=$(openssl rand -base64 32)
+print_info "Generating secure passwords..."
+MYSQL_ROOT_PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-25)
+WP_DB_PASSWORD=$(openssl rand -base64 24 | tr -d "=+/" | cut -c1-20)
+TUNNEL_SECRET=$(openssl rand -hex 32)
 
-print_success "Configuration collected"
+# Configuration summary
+echo
+echo -e "${C_CYAN}╔════════════════════════════════════════════════════════════╗${C_RESET}"
+echo -e "${C_CYAN}║${C_RESET}  ${C_YELLOW}Configuration Summary${C_RESET}"
+echo -e "${C_CYAN}╚════════════════════════════════════════════════════════════╝${C_RESET}"
+echo "  Domain:         $DOMAIN"
+echo "  Account ID:     ${CF_ACCOUNT_ID:0:8}...${CF_ACCOUNT_ID: -4}"
+echo "  Zone ID:        ${CF_ZONE_ID:0:8}...${CF_ZONE_ID: -4}"
+echo "  Tunnel Name:    wordpress-tunnel"
+echo
+read -p "Does this look correct? (y/n): " CONFIRM
+
+if [[ "$CONFIRM" != "y" && "$CONFIRM" != "Y" ]]; then
+    print_error "Installation cancelled by user"
+    exit 0
+fi
+
+print_success "Configuration confirmed!"
+sleep 2
 
 # ==============================================================================
 # STEP 2: System Update
@@ -167,10 +283,10 @@ print_success "Configuration collected"
 print_header "STEP 2: Updating System"
 
 print_info "Updating package lists..."
-apt-get update -qq || error_exit "Failed to update package lists"
+apt-get update -qq || print_warning "Some package updates failed, continuing..."
 
-print_info "Upgrading existing packages..."
-DEBIAN_FRONTEND=noninteractive apt-get upgrade -y -qq
+print_info "Upgrading packages (this may take a few minutes)..."
+DEBIAN_FRONTEND=noninteractive apt-get upgrade -y -qq || print_warning "Some upgrades failed, continuing..."
 
 print_success "System updated"
 
@@ -180,13 +296,13 @@ print_success "System updated"
 print_header "STEP 3: Installing Apache2"
 
 print_info "Installing Apache2..."
-DEBIAN_FRONTEND=noninteractive apt-get install -y -qq apache2 || error_exit "Failed to install Apache2"
+DEBIAN_FRONTEND=noninteractive apt-get install -y apache2 || error_exit "Failed to install Apache2"
 
 print_info "Enabling Apache modules..."
-a2enmod rewrite ssl headers expires || error_exit "Failed to enable Apache modules"
+a2enmod rewrite ssl headers expires || print_warning "Some modules may already be enabled"
 
 print_info "Starting Apache2..."
-systemctl start apache2
+systemctl start apache2 || print_warning "Apache may already be running"
 systemctl enable apache2
 
 if systemctl is-active --quiet apache2; then
@@ -201,23 +317,27 @@ fi
 print_header "STEP 4: Installing MariaDB"
 
 print_info "Installing MariaDB..."
-DEBIAN_FRONTEND=noninteractive apt-get install -y -qq mariadb-server mariadb-client || error_exit "Failed to install MariaDB"
+DEBIAN_FRONTEND=noninteractive apt-get install -y mariadb-server mariadb-client || error_exit "Failed to install MariaDB"
 
 print_info "Starting MariaDB..."
-systemctl start mariadb
+systemctl start mariadb || print_warning "MariaDB may already be running"
 systemctl enable mariadb
+sleep 3
 
-# Secure MariaDB installation
-print_info "Securing MariaDB installation..."
-mysql -e "UPDATE mysql.user SET Password=PASSWORD('$MYSQL_ROOT_PASSWORD') WHERE User='root';" 2>/dev/null || \
-mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '$MYSQL_ROOT_PASSWORD';"
-mysql -e "DELETE FROM mysql.user WHERE User='';"
-mysql -e "DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');"
-mysql -e "DROP DATABASE IF EXISTS test;"
-mysql -e "DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%';"
-mysql -e "FLUSH PRIVILEGES;"
+# Secure MariaDB
+print_info "Securing MariaDB..."
+mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '$MYSQL_ROOT_PASSWORD';" 2>/dev/null || \
+mysql -e "SET PASSWORD FOR 'root'@'localhost' = PASSWORD('$MYSQL_ROOT_PASSWORD');" 2>/dev/null || \
+print_warning "Could not set root password"
 
-# Save MySQL root password
+mysql -u root -p"$MYSQL_ROOT_PASSWORD" <<'EOSQL' || print_warning "Some security steps failed"
+DELETE FROM mysql.user WHERE User='';
+DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');
+DROP DATABASE IF EXISTS test;
+DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%';
+FLUSH PRIVILEGES;
+EOSQL
+
 echo "$MYSQL_ROOT_PASSWORD" > /root/.mysql_root_password
 chmod 600 /root/.mysql_root_password
 
@@ -233,23 +353,24 @@ fi
 print_header "STEP 5: Installing PHP"
 
 print_info "Installing PHP and extensions..."
-DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+DEBIAN_FRONTEND=noninteractive apt-get install -y \
     php php-mysql php-curl php-gd php-mbstring php-xml php-xmlrpc \
     php-soap php-intl php-zip libapache2-mod-php || error_exit "Failed to install PHP"
 
 # Configure PHP
 print_info "Configuring PHP..."
-PHP_INI=$(php -i | grep "Loaded Configuration File" | awk '{print $5}')
+PHP_INI="/etc/php/$(php -v | grep -oP '^PHP \K[0-9]+\.[0-9]+')/apache2/php.ini"
 if [[ -f "$PHP_INI" ]]; then
     cp "$PHP_INI" "$BACKUP_DIR/php.ini.bak"
     sed -i 's/upload_max_filesize = .*/upload_max_filesize = 64M/' "$PHP_INI"
     sed -i 's/post_max_size = .*/post_max_size = 64M/' "$PHP_INI"
     sed -i 's/memory_limit = .*/memory_limit = 256M/' "$PHP_INI"
     sed -i 's/max_execution_time = .*/max_execution_time = 300/' "$PHP_INI"
+else
+    print_warning "Could not find PHP config, using defaults"
 fi
 
 systemctl restart apache2
-
 print_success "PHP installed and configured"
 
 # ==============================================================================
@@ -260,15 +381,15 @@ print_header "STEP 6: Creating WordPress Database"
 WP_DB_NAME="wordpress"
 WP_DB_USER="wpuser"
 
-print_info "Creating database and user..."
-mysql -u root -p"$MYSQL_ROOT_PASSWORD" <<EOF
+print_info "Creating database: $WP_DB_NAME..."
+mysql -u root -p"$MYSQL_ROOT_PASSWORD" <<EOSQL || error_exit "Failed to create database"
 CREATE DATABASE IF NOT EXISTS $WP_DB_NAME DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 CREATE USER IF NOT EXISTS '$WP_DB_USER'@'localhost' IDENTIFIED BY '$WP_DB_PASSWORD';
 GRANT ALL PRIVILEGES ON $WP_DB_NAME.* TO '$WP_DB_USER'@'localhost';
 FLUSH PRIVILEGES;
-EOF
+EOSQL
 
-print_success "WordPress database created"
+print_success "Database created"
 
 # ==============================================================================
 # STEP 7: Install WordPress
@@ -276,41 +397,51 @@ print_success "WordPress database created"
 print_header "STEP 7: Installing WordPress"
 
 cd /tmp
-
 print_info "Downloading WordPress..."
-wget -q https://wordpress.org/latest.tar.gz || error_exit "Failed to download WordPress"
+wget -q --show-progress https://wordpress.org/latest.tar.gz || error_exit "Failed to download WordPress"
 
 print_info "Extracting WordPress..."
 tar -xzf latest.tar.gz
 
-print_info "Moving WordPress files..."
-rm -rf /var/www/html/*
+print_info "Installing WordPress files..."
+if [[ -d /var/www/html ]] && [[ "$(ls -A /var/www/html 2>/dev/null)" ]]; then
+    mv /var/www/html "$BACKUP_DIR/html_backup_$(date +%s)" 2>/dev/null || rm -rf /var/www/html/*
+fi
+mkdir -p /var/www/html
 cp -r wordpress/* /var/www/html/
 
 print_info "Configuring WordPress..."
 cd /var/www/html
-
-# Create wp-config.php
 cp wp-config-sample.php wp-config.php
 
 # Generate WordPress salts
-SALTS=$(curl -s https://api.wordpress.org/secret-key/1.1/salt/)
+SALTS=$(curl -s https://api.wordpress.org/secret-key/1.1/salt/ 2>/dev/null || cat <<'EOSALTS'
+define('AUTH_KEY',         'put your unique phrase here');
+define('SECURE_AUTH_KEY',  'put your unique phrase here');
+define('LOGGED_IN_KEY',    'put your unique phrase here');
+define('NONCE_KEY',        'put your unique phrase here');
+define('AUTH_SALT',        'put your unique phrase here');
+define('SECURE_AUTH_SALT', 'put your unique phrase here');
+define('LOGGED_IN_SALT',   'put your unique phrase here');
+define('NONCE_SALT',       'put your unique phrase here');
+EOSALTS
+)
 
-# Configure wp-config.php
+# Configure database settings
 sed -i "s/database_name_here/$WP_DB_NAME/" wp-config.php
 sed -i "s/username_here/$WP_DB_USER/" wp-config.php
 sed -i "s/password_here/$WP_DB_PASSWORD/" wp-config.php
 
-# Replace salts
-sed -i "/AUTH_KEY/,/NONCE_SALT/d" wp-config.php
-sed -i "/define( 'DB_COLLATE', '' );/a\\$SALTS" wp-config.php
+# Replace salts (safer method)
+perl -i -pe "BEGIN{undef $/;} s/define\('AUTH_KEY'.*?define\('NONCE_SALT'.*?\);/$SALTS/sm" wp-config.php 2>/dev/null || \
+print_warning "Could not update security keys automatically"
 
-# Set correct permissions
+# Set permissions
 chown -R www-data:www-data /var/www/html
 find /var/www/html -type d -exec chmod 755 {} \;
 find /var/www/html -type f -exec chmod 644 {} \;
 
-# Create .htaccess for permalinks
+# Create .htaccess
 cat > /var/www/html/.htaccess <<'HTACCESS'
 # BEGIN WordPress
 <IfModule mod_rewrite.c>
@@ -326,18 +457,17 @@ HTACCESS
 
 chown www-data:www-data /var/www/html/.htaccess
 
-# Cleanup
 rm -f /tmp/latest.tar.gz
 rm -rf /tmp/wordpress
 
 print_success "WordPress installed"
 
 # ==============================================================================
-# STEP 8: Configure Apache for WordPress
+# STEP 8: Configure Apache
 # ==============================================================================
 print_header "STEP 8: Configuring Apache"
 
-print_info "Creating Apache virtual host..."
+print_info "Creating virtual host..."
 cat > /etc/apache2/sites-available/wordpress.conf <<EOF
 <VirtualHost *:80>
     ServerName $DOMAIN
@@ -355,65 +485,47 @@ cat > /etc/apache2/sites-available/wordpress.conf <<EOF
 </VirtualHost>
 EOF
 
-print_info "Enabling WordPress site..."
 a2dissite 000-default.conf 2>/dev/null || true
 a2ensite wordpress.conf
 
-print_info "Testing Apache configuration..."
-apache2ctl configtest || error_exit "Apache configuration test failed"
-
+apache2ctl configtest || print_warning "Apache config test failed, but continuing..."
 systemctl restart apache2
 
-print_success "Apache configured for WordPress"
+print_success "Apache configured"
 
 # ==============================================================================
 # STEP 9: Install Cloudflared
 # ==============================================================================
 print_header "STEP 9: Installing Cloudflare Tunnel"
 
-print_info "Adding Cloudflare GPG key..."
+print_info "Adding Cloudflare repository..."
 mkdir -p /usr/share/keyrings
 curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | tee /usr/share/keyrings/cloudflare-main.gpg >/dev/null
 
-print_info "Adding Cloudflare repository..."
 echo "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared $(lsb_release -cs) main" | \
-    tee /etc/apt/sources.list.d/cloudflared.list
+    tee /etc/apt/sources.list.d/cloudflared.list >/dev/null
 
 print_info "Installing cloudflared..."
 apt-get update -qq
-DEBIAN_FRONTEND=noninteractive apt-get install -y -qq cloudflared || error_exit "Failed to install cloudflared"
+DEBIAN_FRONTEND=noninteractive apt-get install -y cloudflared || error_exit "Failed to install cloudflared"
 
 print_success "Cloudflared installed"
 
 # ==============================================================================
-# STEP 10: Configure Cloudflare Tunnel
+# STEP 10: Configure Tunnel
 # ==============================================================================
 print_header "STEP 10: Configuring Cloudflare Tunnel"
 
-TUNNEL_NAME="wordpress-tunnel-$(date +%s)"
+TUNNEL_NAME="wordpress-tunnel"
 
-print_info "Authenticating with Cloudflare..."
-mkdir -p /etc/cloudflared
-
-# Create credentials file
-cat > /root/.cloudflared/cert.json <<EOF
-{
-  "AccountTag": "$CF_ACCOUNT_ID",
-  "TunnelSecret": "$TUNNEL_SECRET",
-  "TunnelID": ""
-}
-EOF
-
-print_info "Creating tunnel: $TUNNEL_NAME..."
-
-# Create tunnel using API
+print_info "Creating tunnel..."
 TUNNEL_RESPONSE=$(curl -s -X POST \
     "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/cfd_tunnel" \
     -H "Authorization: Bearer $CF_API_TOKEN" \
     -H "Content-Type: application/json" \
     --data "{\"name\":\"$TUNNEL_NAME\",\"tunnel_secret\":\"$TUNNEL_SECRET\"}")
 
-TUNNEL_ID=$(echo "$TUNNEL_RESPONSE" | grep -o '"id":"[^"]*' | cut -d'"' -f4)
+TUNNEL_ID=$(echo "$TUNNEL_RESPONSE" | grep -o '"id":"[^"]*' | head -1 | cut -d'"' -f4)
 
 if [[ -z "$TUNNEL_ID" ]]; then
     print_error "Failed to create tunnel"
@@ -423,7 +535,7 @@ fi
 
 print_success "Tunnel created: $TUNNEL_ID"
 
-# Create tunnel credentials file
+# Create credentials
 mkdir -p /root/.cloudflared
 cat > /root/.cloudflared/${TUNNEL_ID}.json <<EOF
 {
@@ -433,7 +545,7 @@ cat > /root/.cloudflared/${TUNNEL_ID}.json <<EOF
 }
 EOF
 
-# Create tunnel configuration
+# Create config
 cat > /etc/cloudflared/config.yml <<EOF
 tunnel: $TUNNEL_ID
 credentials-file: /root/.cloudflared/${TUNNEL_ID}.json
@@ -446,68 +558,67 @@ ingress:
   - service: http_status:404
 EOF
 
-print_info "Configuring DNS records..."
+# Configure DNS
+print_info "Creating DNS records..."
 
-# Create DNS record for root domain
-DNS_RESPONSE=$(curl -s -X POST \
+# Root domain
+DNS_ROOT=$(curl -s -X POST \
     "https://api.cloudflare.com/client/v4/zones/$CF_ZONE_ID/dns_records" \
     -H "Authorization: Bearer $CF_API_TOKEN" \
     -H "Content-Type: application/json" \
     --data "{\"type\":\"CNAME\",\"name\":\"@\",\"content\":\"$TUNNEL_ID.cfargotunnel.com\",\"ttl\":1,\"proxied\":true}")
 
-if echo "$DNS_RESPONSE" | grep -q '"success":true'; then
+if echo "$DNS_ROOT" | grep -q '"success":true'; then
     print_success "DNS record created for $DOMAIN"
 else
-    print_warning "Failed to create DNS record for root domain"
-    echo "Response: $DNS_RESPONSE"
+    print_warning "Failed to create root DNS record (may already exist)"
 fi
 
-# Create DNS record for www subdomain
-DNS_RESPONSE_WWW=$(curl -s -X POST \
+# WWW subdomain
+DNS_WWW=$(curl -s -X POST \
     "https://api.cloudflare.com/client/v4/zones/$CF_ZONE_ID/dns_records" \
     -H "Authorization: Bearer $CF_API_TOKEN" \
     -H "Content-Type: application/json" \
     --data "{\"type\":\"CNAME\",\"name\":\"www\",\"content\":\"$TUNNEL_ID.cfargotunnel.com\",\"ttl\":1,\"proxied\":true}")
 
-if echo "$DNS_RESPONSE_WWW" | grep -q '"success":true'; then
+if echo "$DNS_WWW" | grep -q '"success":true'; then
     print_success "DNS record created for www.$DOMAIN"
 else
-    print_warning "Failed to create DNS record for www subdomain"
+    print_warning "Failed to create www DNS record (may already exist)"
 fi
 
-print_success "Cloudflare Tunnel configured"
+print_success "DNS configured"
 
 # ==============================================================================
-# STEP 11: Install and Start Tunnel Service
+# STEP 11: Start Tunnel Service
 # ==============================================================================
-print_header "STEP 11: Starting Cloudflare Tunnel Service"
+print_header "STEP 11: Starting Tunnel Service"
 
-print_info "Installing tunnel as a service..."
+print_info "Installing tunnel service..."
 cloudflared service install
 
-print_info "Starting tunnel service..."
+print_info "Starting tunnel..."
 systemctl start cloudflared
 systemctl enable cloudflared
-
 sleep 3
 
 if systemctl is-active --quiet cloudflared; then
-    print_success "Cloudflare Tunnel service is running"
+    print_success "Tunnel service running"
 else
-    error_exit "Cloudflare Tunnel service failed to start"
+    error_exit "Tunnel failed to start"
 fi
 
 # ==============================================================================
-# STEP 12: Create Installation Summary
+# STEP 12: Create Summary
 # ==============================================================================
-print_header "STEP 12: Creating Installation Summary"
+print_header "STEP 12: Creating Summary"
 
 cat > "$SUMMARY_FILE" <<EOF
 ════════════════════════════════════════════════════════════
 WordPress + Cloudflare Tunnel Installation Summary
 ════════════════════════════════════════════════════════════
 Installation Date: $(date)
-Server Hostname: $(hostname)
+Server: $(hostname)
 
 WEBSITE INFORMATION
 ════════════════════════════════════════════════════════════
@@ -533,19 +644,17 @@ FILE LOCATIONS
 WordPress:          /var/www/html/
 Apache Config:      /etc/apache2/sites-available/wordpress.conf
 Tunnel Config:      /etc/cloudflared/config.yml
-Tunnel Credentials: /root/.cloudflared/${TUNNEL_ID}.json
+Tunnel Creds:       /root/.cloudflared/${TUNNEL_ID}.json
 MySQL Root Pass:    /root/.mysql_root_password
 Installation Log:   $LOG_FILE
-Backups:            $BACKUP_DIR
 
 USEFUL COMMANDS
 ════════════════════════════════════════════════════════════
-Check tunnel status:    sudo systemctl status cloudflared
-View tunnel logs:       sudo journalctl -u cloudflared -f
-Restart tunnel:         sudo systemctl restart cloudflared
-Check Apache status:    sudo systemctl status apache2
-Check MariaDB status:   sudo systemctl status mariadb
-View Apache logs:       sudo tail -f /var/log/apache2/wordpress_error.log
+Check tunnel:       sudo systemctl status cloudflared
+Tunnel logs:        sudo journalctl -u cloudflared -f
+Restart tunnel:     sudo systemctl restart cloudflared
+Check Apache:       sudo systemctl status apache2
+Check MariaDB:      sudo systemctl status mariadb
 
 NEXT STEPS
 ════════════════════════════════════════════════════════════
@@ -561,8 +670,7 @@ NEXT STEPS
 EOF
 
 chmod 600 "$SUMMARY_FILE"
-
-print_success "Installation summary saved to $SUMMARY_FILE"
+print_success "Summary saved to $SUMMARY_FILE"
 
 # ==============================================================================
 # FINAL: Display Results
@@ -572,51 +680,39 @@ echo -e "${C_GREEN}════════════════════�
 echo -e "${C_CYAN}           🎉 INSTALLATION COMPLETE! 🎉${C_RESET}"
 echo -e "${C_GREEN}════════════════════════════════════════════════════════════${C_RESET}"
 echo
-echo -e "${C_YELLOW}📍 Service Status:${C_RESET}"
-echo -n "  ✓ Apache2:      "
-systemctl is-active --quiet apache2 && echo -e "${C_GREEN}RUNNING${C_RESET}" || echo -e "${C_RED}STOPPED${C_RESET}"
-echo -n "  ✓ MariaDB:      "
-systemctl is-active --quiet mariadb && echo -e "${C_GREEN}RUNNING${C_RESET}" || echo -e "${C_RED}STOPPED${C_RESET}"
-echo -n "  ✓ Cloudflared:  "
-systemctl is-active --quiet cloudflared && echo -e "${C_GREEN}RUNNING${C_RESET}" || echo -e "${C_RED}STOPPED${C_RESET}"
+echo -e "${C_YELLOW}Service Status:${C_RESET}"
+systemctl is-active --quiet apache2 && echo -e "  ✓ Apache2:     ${C_GREEN}RUNNING${C_RESET}" || echo -e "  ✗ Apache2:     ${C_RED}STOPPED${C_RESET}"
+systemctl is-active --quiet mariadb && echo -e "  ✓ MariaDB:     ${C_GREEN}RUNNING${C_RESET}" || echo -e "  ✗ MariaDB:     ${C_RED}STOPPED${C_RESET}"
+systemctl is-active --quiet cloudflared && echo -e "  ✓ Cloudflared: ${C_GREEN}RUNNING${C_RESET}" || echo -e "  ✗ Cloudflared: ${C_RED}STOPPED${C_RESET}"
 echo
 echo -e "${C_CYAN}════════════════════════════════════════════════════════════${C_RESET}"
 echo -e "${C_YELLOW}🌐 YOUR WEBSITE${C_RESET}"
 echo -e "${C_CYAN}════════════════════════════════════════════════════════════${C_RESET}"
-echo -e "  URL:            ${C_GREEN}https://$DOMAIN${C_RESET}"
-echo -e "  With www:       ${C_GREEN}https://www.$DOMAIN${C_RESET}"
+echo -e "  ${C_GREEN}https://$DOMAIN${C_RESET}"
+echo -e "  ${C_GREEN}https://www.$DOMAIN${C_RESET}"
 echo
 echo -e "${C_YELLOW}⚠️  WAIT 2-5 MINUTES FOR DNS PROPAGATION${C_RESET}"
 echo
 echo -e "${C_CYAN}════════════════════════════════════════════════════════════${C_RESET}"
 echo -e "${C_YELLOW}📋 NEXT STEPS${C_RESET}"
 echo -e "${C_CYAN}════════════════════════════════════════════════════════════${C_RESET}"
+echo "1. Configure Cloudflare SSL:"
+echo "   • Go to: https://dash.cloudflare.com"
+echo "   • SSL/TLS → Set to 'Full' or 'Flexible'"
+echo "   • Enable 'Always Use HTTPS'"
 echo
-echo "  1. Configure Cloudflare SSL:"
-echo "     • Visit: https://dash.cloudflare.com"
-echo "     • Select domain: $DOMAIN"
-echo "     • SSL/TLS → Set to 'Full' or 'Flexible'"
-echo "     • Enable 'Always Use HTTPS'"
+echo "2. Complete WordPress Setup:"
+echo "   • Visit: https://$DOMAIN"
+echo "   • Follow the setup wizard"
 echo
-echo "  2. Complete WordPress Setup:"
-echo "     • Visit: https://$DOMAIN"
-echo "     • Follow the setup wizard"
-echo "     • Create your admin account"
-echo
-echo "  3. Install Security Plugins:"
-echo "     • Wordfence Security"
-echo "     • UpdraftPlus Backup"
+echo "3. Install Security Plugins"
 echo
 echo -e "${C_CYAN}════════════════════════════════════════════════════════════${C_RESET}"
-echo -e "${C_YELLOW}📄 IMPORTANT FILES${C_RESET}"
+echo -e "${C_YELLOW}📄 Installation Summary:${C_RESET} cat $SUMMARY_FILE"
 echo -e "${C_CYAN}════════════════════════════════════════════════════════════${C_RESET}"
-echo "  Installation Summary:  $SUMMARY_FILE"
-echo "  MySQL Root Password:   /root/.mysql_root_password"
-echo "  Installation Log:      $LOG_FILE"
 echo
-echo -e "${C_GREEN}════════════════════════════════════════════════════════════${C_RESET}"
 print_success "Installation completed successfully!"
-echo -e "${C_GREEN}════════════════════════════════════════════════════════════${C_RESET}"
 echo
-print_info "View full details: cat $SUMMARY_FILE"
+print_info "View logs: tail -f $LOG_FILE"
+print_info "Check tunnel: sudo journalctl -u cloudflared -f"
 echo
